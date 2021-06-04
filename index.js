@@ -3,6 +3,7 @@ const SpotifyWebApi = require('spotify-web-api-node');
 const express       = require('express');
 const fs            = require('fs');
 
+// Don't need all of this access to lookup and add to playlists.
 const scopes = [
    'ugc-image-upload',
    'user-read-playback-state',
@@ -37,7 +38,12 @@ const spotifyApi = new SpotifyWebApi({
 const app = express();
 
 
-
+/**
+ * # loadSongFile
+ * Load the text file with song names in it. Uses fileImportName to find the file in the same directory.
+ *
+ * @returns {promise}
+ */
 async function loadSongFile(){
     return new Promise((resolve, reject)=>{
         fs.readFile( __dirname + "/" + fileImportName, function (err, data) {
@@ -45,14 +51,20 @@ async function loadSongFile(){
             resolve(data.toString());
         });
     })
-}
-
+};
+/**
+ * # forceWait
+ * Returns a promise that will be resolved in after requested time.
+ *
+ * @param {number} length - Length to wait in ms.
+ *
+ * @returns {promise}
+ */
 async function forceWait(length){
     return new Promise((resolve) =>{
         setTimeout(resolve, length);
     })
-}
-
+};
 /**
  * # lookupSong
  * Do the search to try to find the song id by title
@@ -80,9 +92,16 @@ async function lookupSong(name){
             reject(err)
         });
     })
-}
-
-
+};
+/**
+ * # addSongsToPlaylist
+ * Add the songs to Spotify playlist. Note: There is a limit to how many you can add at a time (I tried 2500 and it failed).
+ *
+ * @param {string} playListId - Id to the playlist.
+ * @param {array}  list       - Array of spotify track ids.
+ *
+ * @returns {promise}
+ */
 async function addSongsToPlaylist(playListId, list){
     return new Promise((resolve, reject)=>{
         spotifyApi.addTracksToPlaylist(
@@ -98,10 +117,15 @@ async function addSongsToPlaylist(playListId, list){
             reject(err)
         });
     })
-}
-
+};
+/**
+ * # processRecords
+ * Load and process the file
+ * 
+ * @returns null
+ */
 async function processRecords(){
-    console.log(`Processing file '${fileImportName}'.`)
+    console.log(`[Status]: Processing file '${fileImportName}'.`)
 
     // Load the file of song names (format is song - artist but not always formatted correctly).
     let file = await loadSongFile();
@@ -137,18 +161,20 @@ async function processRecords(){
         console.log(`[${i}/${filtered.length}]:Looking up '${filtered[i]}'.`)
 
         try{
+            // Look up the first song we find by name.
             let id = await lookupSong(filtered[i]);
 
              // Add the song to the play list.
             await addSongsToPlaylist(playListId, [id])
         }catch(e){
 
+            // Do the search again if it failed just to verify it wasn't rate limit.
             if(retry){
                 // If we had trouble finding it, go to the next one.
-                console.log("Error with lookupSong", e)
+                console.log("[Error]: lookupSong", e)
                 unableToFind += filtered[i] + "\n";
             }else{
-                console.log("error with lookup, retrying once.");
+                console.log("[Error]: lookupSong - Retrying once.");
                 i -= 1;
                 await forceWait(5000);
             }
@@ -156,27 +182,27 @@ async function processRecords(){
             retry = !retry;
         }
 
-        // Limit it to twice a second.
+        // Limit it to twice a second so we don't hit rate limit.
         await forceWait(500);
     }
+
+    console.log("[Status]: Writing 'unable_to_find.txt' out.")
 
     // Write out the ones we could find.
     fs.writeFile('unable_to_find.txt', unableToFind, function (err) {
         if (err) return console.log(err);
-        console.log("file writen out")
-     });
 
-    console.log("Done processing!")
-}
+        console.log("[Status]: Done processing!")
+     });
+};
 
 app.get('/login', (req, res) => {
    res.redirect(spotifyApi.createAuthorizeURL(scopes));
 });
- 
+
 app.get('/callback', (req, res) => {
    const error = req.query.error;
    const code = req.query.code;
-   const state = req.query.state;
 
    if (error) {
      console.error('Callback Error:', error);
@@ -187,15 +213,15 @@ app.get('/callback', (req, res) => {
    spotifyApi
      .authorizationCodeGrant(code)
      .then(data => {
-       const access_token = data.body['access_token'];
+       const access_token  = data.body['access_token'];
        const refresh_token = data.body['refresh_token'];
-       const expires_in = data.body['expires_in'];
+       const expires_in    = data.body['expires_in'];
 
        spotifyApi.setAccessToken(access_token);
        spotifyApi.setRefreshToken(refresh_token);
 
-       console.log('access_token:', access_token);
-       console.log('refresh_token:', refresh_token);
+       // console.log('access_token:', access_token);
+       // console.log('refresh_token:', refresh_token);
 
        console.log(`Sucessfully retreived access token. Expires in ${expires_in} s.`);
        res.send('Success! You can now close the window.');
@@ -205,7 +231,7 @@ app.get('/callback', (req, res) => {
          const access_token = data.body['access_token'];
 
          console.log('The access token has been refreshed!');
-         console.log('access_token:', access_token);
+         // console.log('access_token:', access_token);
          spotifyApi.setAccessToken(access_token);
        }, expires_in / 2 * 1000);
 
